@@ -81,12 +81,17 @@ class det:
         self.dataset = LoadStreams(source, img_size=imgsz, stride=self.stride, auto=self.pt)
         self.bs = len(self.dataset)  # batch_size
 
+    def pause(self):
+        self.dataset = None
+
     def run(self, time):
         # Run inference
         self.model.warmup(imgsz=(1 if self.pt else self.bs, 3, *self.imgsz))  # warmup
         dt, seen = [0.0, 0.0, 0.0], 0
         for path, im, im0s, vid_cap, s in self.dataset:
             if(seen > time):
+                print("X")
+                self.dataset.pause()
                 return 0
             t1 = time_sync()
             im = torch.from_numpy(im).to(self.device)

@@ -5,6 +5,6 @@ import time
 detector = det(weights="yolov5n.pt")
 
 while(True):
+    detector.run(10)
     print("Sleeping... Doing something else...")
-    time.sleep(5)
-    detector.run(100)
+    time.sleep(3)

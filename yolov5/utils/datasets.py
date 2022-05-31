@@ -17,6 +17,7 @@ from pathlib import Path
 from threading import Thread
 from urllib.parse import urlparse
 from zipfile import ZipFile
+from cv2 import VideoCapture
 
 import numpy as np
 import torch
@@ -85,7 +86,7 @@ def exif_transpose(image):
             5: Image.TRANSPOSE,
             6: Image.ROTATE_270,
             7: Image.TRANSVERSE,
-            8: Image.ROTATE_90,}.get(orientation)
+            8: Image.ROTATE_90, }.get(orientation)
         if method is not None:
             image = image.transpose(method)
             del exif[0x0112]
@@ -324,16 +325,17 @@ class LoadStreams:
                 import pafy
                 s = pafy.new(s).getbest(preftype="mp4").url  # YouTube URL
             s = eval(s) if s.isnumeric() else s  # i.e. s = '0' local webcam
-            cap = cv2.VideoCapture(s)
-            assert cap.isOpened(), f'{st}Failed to open {s}'
-            w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-            h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-            fps = cap.get(cv2.CAP_PROP_FPS)  # warning: may return 0 or nan
-            self.frames[i] = max(int(cap.get(cv2.CAP_PROP_FRAME_COUNT)), 0) or float('inf')  # infinite stream fallback
+            self.cap = cv2.VideoCapture(s)
+            assert self.cap.isOpened(), f'{st}Failed to open {s}'
+            w = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            h = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            fps = self.cap.get(cv2.CAP_PROP_FPS)  # warning: may return 0 or nan
+            self.frames[i] = max(int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT)),
+                                 0) or float('inf')  # infinite stream fallback
             self.fps[i] = max((fps if math.isfinite(fps) else 0) % 100, 0) or 30  # 30 FPS fallback
 
-            _, self.imgs[i] = cap.read()  # guarantee first frame
-            self.threads[i] = Thread(target=self.update, args=([i, cap, s]), daemon=True)
+            _, self.imgs[i] = self.cap.read()  # guarantee first frame
+            self.threads[i] = Thread(target=self.update, args=([i, s]), daemon=True)
             LOGGER.info(f"{st} Success ({self.frames[i]} frames {w}x{h} at {self.fps[i]:.2f} FPS)")
             self.threads[i].start()
         LOGGER.info('')  # newline
@@ -344,24 +346,41 @@ class LoadStreams:
         if not self.rect:
             LOGGER.warning('WARNING: Stream shapes differ. For optimal performance supply similarly-shaped streams.')
 
-    def update(self, i, cap, stream):
+    def update(self, i, stream):
         # Read stream `i` frames in daemon thread
         n, f, read = 0, self.frames[i], 1  # frame number, frame array, inference every 'read' frame
-        while cap.isOpened() and n < f:
+        while n < f:
+            if self.cap == None or not self.cap.isOpened():
+                break
+
             n += 1
             # _, self.imgs[index] = cap.read()
-            cap.grab()
+            self.cap.grab()
             if n % read == 0:
-                success, im = cap.retrieve()
+                success, im = self.cap.retrieve()
                 if success:
                     self.imgs[i] = im
                 else:
                     LOGGER.warning('WARNING: Video stream unresponsive, please check your IP camera connection.')
                     self.imgs[i] = np.zeros_like(self.imgs[i])
-                    cap.open(stream)  # re-open stream if signal was lost
+                    self.cap.open(stream)  # re-open stream if signal was lost
             time.sleep(1 / self.fps[i])  # wait time
 
     def __iter__(self):
+        print('x')
+        self.cap = cv2.VideoCapture(0)
+        w = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        h = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        fps = self.cap.get(cv2.CAP_PROP_FPS)  # warning: may return 0 or nan
+        self.frames[0] = max(int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT)),
+                             0) or float('inf')  # infinite stream fallback
+        self.fps[0] = max((fps if math.isfinite(fps) else 0) % 100, 0) or 30  # 30 FPS fallback
+        self.frames[0] = max(int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT)),
+                             0) or float('inf')  # infinite stream fallback
+        _, self.imgs[0] = self.cap.read()  # guarantee first frame
+        if(not self.threads[0].is_alive()):
+            self.threads[0] = Thread(target=self.update, args=([0, '0']), daemon=True)
+            self.threads[0].start()
         self.count = -1
         return self
 
@@ -387,9 +406,9 @@ class LoadStreams:
     def __len__(self):
         return len(self.sources)  # 1E12 frames = 32 streams at 30 FPS for 30 years
 
-    def stop():
-        cv2.destroyAllWindows()
-        
+    def pause(self):
+        self.cap.release()
+        # self.cap = None
 
 
 def img2label_paths(img_paths):
