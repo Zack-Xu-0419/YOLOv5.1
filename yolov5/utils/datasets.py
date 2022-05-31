@@ -349,10 +349,7 @@ class LoadStreams:
     def update(self, i, stream):
         # Read stream `i` frames in daemon thread
         n, f, read = 0, self.frames[i], 1  # frame number, frame array, inference every 'read' frame
-        while n < f:
-            if self.cap == None or not self.cap.isOpened():
-                break
-
+        while n < f and self.cap.isOpened():
             n += 1
             # _, self.imgs[index] = cap.read()
             self.cap.grab()
