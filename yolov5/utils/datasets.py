@@ -335,11 +335,12 @@ class LoadStreams:
             self.fps[i] = max((fps if math.isfinite(fps) else 0) % 100, 0) or 30  # 30 FPS fallback
 
             _, self.imgs[i] = self.cap.read()  # guarantee first frame
+
+            self.pause_thread_event = Event()
+            self.pause_thread_event.set()
             self.threads[i] = Thread(target=self.update, args=([i, s]), daemon=True)
             LOGGER.info(f"{st} Success ({self.frames[i]} frames {w}x{h} at {self.fps[i]:.2f} FPS)")
             self.threads[i].start()
-        self.pause_thread_event = Event()
-        self.pause_thread_event.set()
         LOGGER.info('')  # newline
 
         # check for common shapes
