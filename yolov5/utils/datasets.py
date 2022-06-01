@@ -14,15 +14,15 @@ import time
 from itertools import repeat
 from multiprocessing.pool import Pool, ThreadPool
 from pathlib import Path
-from threading import Thread
+from threading import Event, Thread
 from urllib.parse import urlparse
 from zipfile import ZipFile
-from cv2 import VideoCapture
 
 import numpy as np
 import torch
 import torch.nn.functional as F
 import yaml
+from cv2 import VideoCapture
 from PIL import ExifTags, Image, ImageOps
 from torch.utils.data import DataLoader, Dataset, dataloader, distributed
 from tqdm.auto import tqdm
@@ -338,6 +338,8 @@ class LoadStreams:
             self.threads[i] = Thread(target=self.update, args=([i, s]), daemon=True)
             LOGGER.info(f"{st} Success ({self.frames[i]} frames {w}x{h} at {self.fps[i]:.2f} FPS)")
             self.threads[i].start()
+        self.pause_thread_event = Event()
+        self.pause_thread_event.set()
         LOGGER.info('')  # newline
 
         # check for common shapes
@@ -349,7 +351,13 @@ class LoadStreams:
     def update(self, i, stream):
         # Read stream `i` frames in daemon thread
         n, f, read = 0, self.frames[i], 1  # frame number, frame array, inference every 'read' frame
-        while n < f and self.cap.isOpened():
+        while n < f:
+            if not self.pause_thread_event.is_set():
+                self.cap.release()
+                self.pause_thread_event.wait()
+                self.cap = VideoCapture(0)
+                assert self.cap.isOpened()
+                _, self.imgs[i] = self.cap.read()  # guarantee first frame
             n += 1
             # _, self.imgs[index] = cap.read()
             self.cap.grab()
@@ -364,20 +372,7 @@ class LoadStreams:
             time.sleep(1 / self.fps[i])  # wait time
 
     def __iter__(self):
-        print('x')
-        self.cap = cv2.VideoCapture(0)
-        w = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        h = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        fps = self.cap.get(cv2.CAP_PROP_FPS)  # warning: may return 0 or nan
-        self.frames[0] = max(int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT)),
-                             0) or float('inf')  # infinite stream fallback
-        self.fps[0] = max((fps if math.isfinite(fps) else 0) % 100, 0) or 30  # 30 FPS fallback
-        self.frames[0] = max(int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT)),
-                             0) or float('inf')  # infinite stream fallback
-        _, self.imgs[0] = self.cap.read()  # guarantee first frame
-        if(not self.threads[0].is_alive()):
-            self.threads[0] = Thread(target=self.update, args=([0, '0']), daemon=True)
-            self.threads[0].start()
+        self.pause_thread_event.set()
         self.count = -1
         return self
 
@@ -404,8 +399,7 @@ class LoadStreams:
         return len(self.sources)  # 1E12 frames = 32 streams at 30 FPS for 30 years
 
     def pause(self):
-        self.cap.release()
-        # self.cap = None
+        self.pause_thread_event.clear()
 
 
 def img2label_paths(img_paths):

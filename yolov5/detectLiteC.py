@@ -24,12 +24,6 @@ Usage - formats:
                                          yolov5s_edgetpu.tflite     # TensorFlow Edge TPU
 """
 
-from utils.torch_utils import select_device, time_sync
-from utils.plots import Annotator, colors, save_one_box
-from utils.general import (LOGGER, check_file, check_img_size, check_imshow, check_requirements, colorstr, cv2,
-                           increment_path, non_max_suppression, print_args, scale_coords, strip_optimizer, xyxy2xywh)
-from utils.datasets import IMG_FORMATS, VID_FORMATS, LoadImages, LoadStreams, dataset_stats
-from models.common import DetectMultiBackend
 import argparse
 import os
 import sys
@@ -37,6 +31,13 @@ from pathlib import Path
 
 import torch
 import torch.backends.cudnn as cudnn
+
+from models.common import DetectMultiBackend
+from utils.datasets import IMG_FORMATS, VID_FORMATS, LoadImages, LoadStreams, dataset_stats
+from utils.general import (LOGGER, check_file, check_img_size, check_imshow, check_requirements, colorstr, cv2,
+                           increment_path, non_max_suppression, print_args, scale_coords, strip_optimizer, xyxy2xywh)
+from utils.plots import Annotator, colors, save_one_box
+from utils.torch_utils import select_device, time_sync
 
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  # YOLOv5 root directory
@@ -89,10 +90,9 @@ class det:
         self.model.warmup(imgsz=(1 if self.pt else self.bs, 3, *self.imgsz))  # warmup
         dt, seen = [0.0, 0.0, 0.0], 0
         for path, im, im0s, vid_cap, s in self.dataset:
-            if(seen > time):
-                print("X")
+            if seen > time:
                 self.dataset.pause()
-                return 0
+                return
             t1 = time_sync()
             im = torch.from_numpy(im).to(self.device)
             im = im.half() if self.model.fp16 else im.float()  # uint8 to fp16/32
